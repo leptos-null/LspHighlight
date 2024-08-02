@@ -3,15 +3,18 @@ import AppKit // for debugging with NSAttributedString
 import ArgumentParser
 import LanguageServerProtocol
 import LanguageServerProtocolJSONRPC
+import OSLog
 
 // we just send a couple of requests right now - we don't need to support these messages right now
 final class LspHandler: MessageHandler {
+    private static let logger = Logger(subsystem: "null.leptos.LspHighlight", category: "LspHandler")
+    
     func handle<Notification>(_ params: Notification, from clientID: ObjectIdentifier) where Notification: NotificationType {
-        print("Got", params)
+        Self.logger.info("Got \(String(describing: params)))")
     }
     
     func handle<Request>(_ params: Request, id: RequestID, from clientID: ObjectIdentifier, reply: @escaping (LSPResult<Request.Response>) -> Void) where Request: RequestType {
-        print("Got", params)
+        Self.logger.info("Got \(String(describing: params)))")
     }
 }
 
