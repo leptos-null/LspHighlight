@@ -38,7 +38,13 @@ struct LspHighlight: ParsableCommand {
     )
     var lspServerFlags: [String] = []
     
-    @Option(completion: .list(Self.knownLanguageIds))
+    @Option(
+        help: ArgumentHelp(
+            "The LSP language identifier for the given source code file",
+            discussion: "By default, the program attempts to select the language based on the file name"
+        ),
+        completion: .list(Self.knownLanguageIds)
+    )
     var language: Language.LanguageId? = nil
     
     @Argument(
