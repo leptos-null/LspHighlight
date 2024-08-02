@@ -19,7 +19,7 @@ let package = Package(
             name: "LspHighlight",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
-                .product(name: "_SourceKitLSP", package: "sourcekit-lsp"),
+                .product(name: "LSPBindings", package: "sourcekit-lsp"),
             ]
         ),
     ]

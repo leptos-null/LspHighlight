@@ -1,7 +1,6 @@
 import Foundation
 import AppKit // for debugging with NSAttributedString
 import ArgumentParser
-import SourceKitLSP
 import LanguageServerProtocol
 import LanguageServerProtocolJSONRPC
 
@@ -99,8 +98,8 @@ struct LspHighlight: ParsableCommand {
             textDocument: .init(
                 semanticTokens: .init(
                     requests: .init(range: .bool(false), full: .bool(true)),
-                    tokenTypes: SyntaxHighlightingToken.Kind.allCases.map(\._lspName),
-                    tokenModifiers: SyntaxHighlightingToken.Modifiers.allModifiers.map(\._lspName!),
+                    tokenTypes: SemanticTokenTypes.sourceKitCases.map(\.rawValue),
+                    tokenModifiers: SemanticTokenModifiers.sourceKitCases.map(\.rawValue),
                     formats: [.relative]
                 )
             )
@@ -125,8 +124,8 @@ struct LspHighlight: ParsableCommand {
             // when needed, as well
             let semanticTokensProvider = initResponse.capabilities.semanticTokensProvider
             let tokenLegend = semanticTokensProvider?.legend ?? SemanticTokensLegend(
-                tokenTypes: SyntaxHighlightingToken.Kind.allCases.map(\._lspName),
-                tokenModifiers: SyntaxHighlightingToken.Modifiers.allModifiers.map(\._lspName!)
+                tokenTypes: SemanticTokenTypes.sourceKitCases.map(\.rawValue),
+                tokenModifiers: SemanticTokenModifiers.sourceKitCases.map(\.rawValue)
             )
             
             let sourceFileURI = DocumentURI(string: sourceFile.absoluteString)
@@ -151,7 +150,7 @@ struct LspHighlight: ParsableCommand {
                 guard let semanticTokensResponse else {
                     Self.exit(withError: CleanExit.message("No semantic tokens response"))
                 }
-                let tokens: [SyntaxHighlightingToken] = Array(lspEncoded: semanticTokensResponse.data, tokenLegend: tokenLegend)
+                let tokens = SemanticTokenAbsolute.decode(lspEncoded: semanticTokensResponse.data, tokenLegend: tokenLegend)
                 Self.process(tokens: tokens, for: sourceText)
                 Self.exit()
             }
@@ -160,20 +159,19 @@ struct LspHighlight: ParsableCommand {
         dispatchMain()
     }
     
-    private static func process(tokens: [SyntaxHighlightingToken], for text: String) {
+    private static func process(tokens: [SemanticTokenAbsolute], for text: String) {
         // outputting RTF for now for debugging
         
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
         var attrLines = lines.map { AttributedString($0) }
         
         for token in tokens {
-            let range = token.range
-            var attrLine = attrLines[range.lowerBound.line]
-            let head = attrLine.index(attrLine.startIndex, offsetByUnicodeScalars: range.lowerBound.utf16index)
-            let tail = attrLine.index(attrLine.startIndex, offsetByUnicodeScalars: range.upperBound.utf16index)
+            var attrLine = attrLines[token.line]
+            let head = attrLine.index(attrLine.startIndex, offsetByUnicodeScalars: token.startChar)
+            let tail = attrLine.index(head, offsetByUnicodeScalars: token.length)
             
             var attributes = AttributeContainer()
-            switch token.kind {
+            switch token.type {
             case .keyword:
                 attributes.foregroundColor = NSColor.systemPink
             case .comment:
@@ -195,7 +193,7 @@ struct LspHighlight: ParsableCommand {
             }
             
             attrLine[head..<tail].mergeAttributes(attributes)
-            attrLines[range.lowerBound.line] = attrLine
+            attrLines[token.line] = attrLine
         }
         
         var gather = AttributedString()
@@ -299,19 +297,18 @@ extension Language {
     ]
 }
 
-extension Array where Element == SyntaxHighlightingToken {
-    // designed to be the inverse of
-    // https://github.com/swiftlang/sourcekit-lsp/blob/swift-5.10.1-RELEASE/Sources/SourceKitLSP/Swift/SyntaxHighlightingToken.swift#L192
-    init(lspEncoded: [UInt32], tokenLegend: SemanticTokensLegend) {
-        let typeLegend: [SyntaxHighlightingToken.Kind?] = tokenLegend.tokenTypes.map { tokenName in
-            SyntaxHighlightingToken.Kind.allCases.first { $0._lspName == tokenName }
+extension SemanticTokenAbsolute {
+    static func decode(lspEncoded: [UInt32], tokenLegend: SemanticTokensLegend) -> [Self] {
+        let typeLegend: [SemanticTokenTypes] = tokenLegend.tokenTypes.map {
+            SemanticTokenTypes(rawValue: $0)
         }
-        let modifierLegend: [SyntaxHighlightingToken.Modifiers?] = tokenLegend.tokenModifiers.map { tokenName in
-            SyntaxHighlightingToken.Modifiers.allModifiers.first { $0._lspName == tokenName }
+        let modifierLegend: [SemanticTokenModifiers] = tokenLegend.tokenModifiers.map {
+            SemanticTokenModifiers(rawValue: $0)
         }
         
-        var previous = Position(line: 0, utf16index: 0)
-        self.init()
+        var result: [Self] = []
+        var previousLine: Int = 0
+        var previousChar: Int = 0
         
         for headIndex in stride(from: 0, to: lspEncoded.count, by: 5) {
             // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#tokenFormat
@@ -319,27 +316,30 @@ extension Array where Element == SyntaxHighlightingToken {
             let deltaStartChar = Int(lspEncoded[headIndex + 1])
             let length = Int(lspEncoded[headIndex + 2])
             let tokenType = Int(lspEncoded[headIndex + 3])
-            let tokenModifiers = lspEncoded[headIndex + 4]
+            let tokenModifiers = Int(lspEncoded[headIndex + 4])
             
-            let position = Position(
-                line: previous.line + deltaLine,
-                utf16index: (deltaLine == 0) ? previous.utf16index + deltaStartChar : deltaStartChar
-            )
+            let absoluteLine = previousLine + deltaLine
+            let absoluteChar = (deltaLine == 0) ? previousChar + deltaStartChar : deltaStartChar
             
-            let modifiers: SyntaxHighlightingToken.Modifiers = stride(from: 0, to: tokenModifiers.bitWidth, by: 1)
+            let modifiers: Set<SemanticTokenModifiers> = stride(from: 0, to: tokenModifiers.bitWidth, by: 1)
                 .filter { tokenModifiers & (1 << $0) != 0 }
                 .map { modifierLegend[$0] }
                 .reduce(into: []) { partialResult, modifier in
-                    guard let modifier else { return }
-                    partialResult.formUnion(modifier)
+                    partialResult.insert(modifier)
                 }
             
-            self.append(.init(
-                start: position, utf16length: length,
-                kind: typeLegend[tokenType]!,
+            result.append(.init(
+                line: absoluteLine,
+                startChar: absoluteChar,
+                length: length,
+                type: typeLegend[tokenType],
                 modifiers: modifiers
             ))
-            previous = position
+            
+            previousLine = absoluteLine
+            previousChar = absoluteChar
         }
+        
+        return result
     }
 }
