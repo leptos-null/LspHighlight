@@ -98,8 +98,8 @@ struct LspHighlight: ParsableCommand {
             textDocument: .init(
                 semanticTokens: .init(
                     requests: .init(range: .bool(false), full: .bool(true)),
-                    tokenTypes: SemanticTokenTypes.sourceKitCases.map(\.rawValue),
-                    tokenModifiers: SemanticTokenModifiers.sourceKitCases.map(\.rawValue),
+                    tokenTypes: SemanticTokenTypes.allKnownCases.map(\.rawValue),
+                    tokenModifiers: SemanticTokenModifiers.allKnownCases.map(\.rawValue),
                     formats: [.relative]
                 )
             )

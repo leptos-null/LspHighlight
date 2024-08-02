@@ -45,6 +45,30 @@ public extension SemanticTokenModifiers {
 }
 
 public extension SemanticTokenModifiers {
+    static let allKnownCases: [Self] = [
+        .declaration,
+        .definition,
+        .readonly,
+        .static,
+        .deprecated,
+        .abstract,
+        .async,
+        .modification,
+        .documentation,
+        .defaultLibrary,
+        .deduced,
+        .virtual,
+        .dependentName,
+        .usedAsMutableReference,
+        .usedAsMutablePointer,
+        .constructorOrDestructor,
+        .userDefined,
+        .functionScope,
+        .classScope,
+        .fileScope,
+        .globalScope
+    ]
+    
     static let sourceKitCases: [Self] = [
         .declaration,
         .definition,

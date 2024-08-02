@@ -58,6 +58,35 @@ public extension SemanticTokenTypes {
 }
 
 public extension SemanticTokenTypes {
+    static let allKnownCases: [Self] = [
+        .namespace,
+        .type,
+        .class,
+        .enum,
+        .interface,
+        .struct,
+        .typeParameter,
+        .parameter,
+        .variable,
+        .property,
+        .enumMember,
+        .event,
+        .function,
+        .method,
+        .macro,
+        .keyword,
+        .modifier,
+        .comment,
+        .string,
+        .number,
+        .regexp,
+        .operator,
+        .decorator,
+        .identifier,
+        .unknown,
+        .concept
+    ]
+    
     static let sourceKitCases: [Self] = [
         .namespace,
         .type,
