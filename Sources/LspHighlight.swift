@@ -113,11 +113,21 @@ struct LspHighlight: ParsableCommand {
         )
         
         _ = connection.send(initRequest, queue: .main) { reply in
+            let initResponse: InitializeRequest.Response
             do {
-                _ = try reply.get()
+                initResponse = try reply.get()
             } catch {
                 Self.exit(withError: error)
             }
+            
+            // sourcekit-lsp returns `nil` here, however it does provide tokens.
+            // additionally, sourcekit-lsp will automatically call out to clangd
+            // when needed, as well
+            let semanticTokensProvider = initResponse.capabilities.semanticTokensProvider
+            let tokenLegend = semanticTokensProvider?.legend ?? SemanticTokensLegend(
+                tokenTypes: SyntaxHighlightingToken.Kind.allCases.map(\._lspName),
+                tokenModifiers: SyntaxHighlightingToken.Modifiers.allModifiers.map(\._lspName!)
+            )
             
             let sourceFileURI = DocumentURI(string: sourceFile.absoluteString)
             let sourceText = try! String(contentsOf: sourceFile)
@@ -141,7 +151,7 @@ struct LspHighlight: ParsableCommand {
                 guard let semanticTokensResponse else {
                     Self.exit(withError: CleanExit.message("No semantic tokens response"))
                 }
-                let tokens: [SyntaxHighlightingToken] = Array(lspEncoded: semanticTokensResponse.data)
+                let tokens: [SyntaxHighlightingToken] = Array(lspEncoded: semanticTokensResponse.data, tokenLegend: tokenLegend)
                 Self.process(tokens: tokens, for: sourceText)
                 Self.exit()
             }
@@ -292,7 +302,14 @@ extension Language {
 extension Array where Element == SyntaxHighlightingToken {
     // designed to be the inverse of
     // https://github.com/swiftlang/sourcekit-lsp/blob/swift-5.10.1-RELEASE/Sources/SourceKitLSP/Swift/SyntaxHighlightingToken.swift#L192
-    init(lspEncoded: [UInt32]) {
+    init(lspEncoded: [UInt32], tokenLegend: SemanticTokensLegend) {
+        let typeLegend: [SyntaxHighlightingToken.Kind?] = tokenLegend.tokenTypes.map { tokenName in
+            SyntaxHighlightingToken.Kind.allCases.first { $0._lspName == tokenName }
+        }
+        let modifierLegend: [SyntaxHighlightingToken.Modifiers?] = tokenLegend.tokenModifiers.map { tokenName in
+            SyntaxHighlightingToken.Modifiers.allModifiers.first { $0._lspName == tokenName }
+        }
+        
         var previous = Position(line: 0, utf16index: 0)
         self.init()
         
@@ -301,20 +318,26 @@ extension Array where Element == SyntaxHighlightingToken {
             let deltaLine = Int(lspEncoded[headIndex + 0])
             let deltaStartChar = Int(lspEncoded[headIndex + 1])
             let length = Int(lspEncoded[headIndex + 2])
-            let tokenType = lspEncoded[headIndex + 3]
+            let tokenType = Int(lspEncoded[headIndex + 3])
             let tokenModifiers = lspEncoded[headIndex + 4]
             
             let position = Position(
                 line: previous.line + deltaLine,
                 utf16index: (deltaLine == 0) ? previous.utf16index + deltaStartChar : deltaStartChar
             )
-            // my understanding of the specification is that `kind` and `modifiers` should be decoded by
-            // indexing into the respective arrays in `TextDocumentClientCapabilities.SemanticTokens`.
-            // however this code matching the encoding mechanism used in `swift-5.10.1-RELEASE`
+            
+            let modifiers: SyntaxHighlightingToken.Modifiers = stride(from: 0, to: tokenModifiers.bitWidth, by: 1)
+                .filter { tokenModifiers & (1 << $0) != 0 }
+                .map { modifierLegend[$0] }
+                .reduce(into: []) { partialResult, modifier in
+                    guard let modifier else { return }
+                    partialResult.formUnion(modifier)
+                }
+            
             self.append(.init(
                 start: position, utf16length: length,
-                kind: .init(rawValue: tokenType)!,
-                modifiers: .init(rawValue: tokenModifiers)
+                kind: typeLegend[tokenType]!,
+                modifiers: modifiers
             ))
             previous = position
         }
