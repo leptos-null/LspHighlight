@@ -114,52 +114,36 @@ struct LspHighlight: ParsableCommand {
             workspaceFolders: nil
         )
         
-        _ = connection.send(initRequest, queue: .main) { reply in
-            let initResponse: InitializeRequest.Response
-            do {
-                initResponse = try reply.get()
-            } catch {
-                Self.exit(withError: error)
-            }
-            
-            // sourcekit-lsp returns `nil` here, however it does provide tokens.
-            // additionally, sourcekit-lsp will automatically call out to clangd
-            // when needed, as well
-            let semanticTokensProvider = initResponse.capabilities.semanticTokensProvider
-            let tokenLegend = semanticTokensProvider?.legend ?? SemanticTokensLegend(
-                tokenTypes: SemanticTokenTypes.sourceKitCases.map(\.rawValue),
-                tokenModifiers: SemanticTokenModifiers.sourceKitCases.map(\.rawValue)
-            )
-            
-            let sourceFileURI = DocumentURI(string: sourceFile.absoluteString)
-            let sourceText = try! String(contentsOf: sourceFile)
-            
-            let didOpenNotif = DidOpenTextDocumentNotification(
-                textDocument: TextDocumentItem(
-                    uri: sourceFileURI, language: sourceLanguage,
-                    version: 0, text: sourceText
-                )
-            )
-            connection.send(didOpenNotif)
-            
-            let semanticTokensRequest = DocumentSemanticTokensRequest(textDocument: TextDocumentIdentifier(sourceFileURI))
-            _ = connection.send(semanticTokensRequest, queue: .main) { result in
-                let semanticTokensResponse: DocumentSemanticTokensResponse?
-                do {
-                    semanticTokensResponse = try result.get()
-                } catch {
-                    Self.exit(withError: error)
-                }
-                guard let semanticTokensResponse else {
-                    Self.exit(withError: CleanExit.message("No semantic tokens response"))
-                }
-                let tokens = SemanticTokenAbsolute.decode(lspEncoded: semanticTokensResponse.data, tokenLegend: tokenLegend)
-                Self.process(tokens: tokens, for: sourceText)
-                Self.exit()
-            }
-        }
+        let initResponse = try connection.sendSync(initRequest)
         
-        dispatchMain()
+        // sourcekit-lsp returns `nil` here, however it does provide tokens.
+        // additionally, sourcekit-lsp will automatically call out to clangd
+        // when needed, as well
+        let semanticTokensProvider = initResponse.capabilities.semanticTokensProvider
+        let tokenLegend = semanticTokensProvider?.legend ?? SemanticTokensLegend(
+            tokenTypes: SemanticTokenTypes.sourceKitCases.map(\.rawValue),
+            tokenModifiers: SemanticTokenModifiers.sourceKitCases.map(\.rawValue)
+        )
+        
+        let sourceFileURI = DocumentURI(string: sourceFile.absoluteString)
+        let sourceText = try String(contentsOf: sourceFile)
+        
+        let didOpenNotif = DidOpenTextDocumentNotification(
+            textDocument: TextDocumentItem(
+                uri: sourceFileURI, language: sourceLanguage,
+                version: 0, text: sourceText
+            )
+        )
+        connection.send(didOpenNotif)
+        
+        let semanticTokensRequest = DocumentSemanticTokensRequest(textDocument: TextDocumentIdentifier(sourceFileURI))
+        let semanticTokensResponse = try connection.sendSync(semanticTokensRequest)
+        
+        guard let semanticTokensResponse else {
+            Self.exit(withError: CleanExit.message("No semantic tokens response"))
+        }
+        let tokens = SemanticTokenAbsolute.decode(lspEncoded: semanticTokensResponse.data, tokenLegend: tokenLegend)
+        Self.process(tokens: tokens, for: sourceText)
     }
     
     private static func process(tokens: [SemanticTokenAbsolute], for text: String) {
