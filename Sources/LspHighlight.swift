@@ -1,5 +1,4 @@
 import Foundation
-import AppKit // for debugging with NSAttributedString
 import ArgumentParser
 import LanguageServerProtocol
 import LanguageServerProtocolJSONRPC
@@ -153,59 +152,101 @@ struct LspHighlight: ParsableCommand {
     }
     
     private static func process(tokens: [SemanticTokenAbsolute], for text: String) {
-        // outputting RTF for now for debugging
+        let stapledTokens = StapledToken.staple(semanticTokens: tokens, to: text)
+        
+        let html: String = stapledTokens.reduce(into: "") { partialResult, token in
+            // TODO: use `replace` instead of `replacingOccurrences`
+            //   when we move to macOS 13+
+            // thanks to https://www.w3.org/International/questions/qa-escapes#use
+            let cleanHtml = token.text
+                .replacingOccurrences(of: "&", with: "&amp;") // this has to be first, otherwise we'll replace '&' in the other escapes
+                .replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;")
+                .replacingOccurrences(of: "\"", with: "&quot;")
+                .replacingOccurrences(of: "'", with: "&apos;")
+            
+            if let semanticToken = token.semanticToken {
+                let classList = [ "lsp-type-\(semanticToken.type.rawValue)" ] + semanticToken.modifiers.map { "lsp-modifier-\($0.rawValue)" }
+                partialResult.append("<span class=\"\(classList.joined(separator: " "))\">")
+                partialResult.append(contentsOf: cleanHtml)
+                partialResult.append("</span>")
+            } else {
+                partialResult.append(contentsOf: cleanHtml)
+            }
+        }
+        
+        print(html)
+    }
+}
+
+struct StapledToken {
+    let text: String.SubSequence
+    let semanticToken: SemanticTokenAbsolute?
+    
+    init(text: String.SubSequence, semanticToken: SemanticTokenAbsolute? = nil) {
+        self.text = text
+        self.semanticToken = semanticToken
+    }
+}
+
+extension StapledToken {
+    static func staple(semanticTokens: [SemanticTokenAbsolute], to text: String) -> [Self] {
+        var result: [Self] = []
+        var lastLine: Int = 0
+        var lastChar: Int = 0
         
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        var attrLines = lines.map { AttributedString($0) }
         
-        for token in tokens {
-            var attrLine = attrLines[token.line]
-            let head = attrLine.index(attrLine.startIndex, offsetByUnicodeScalars: token.startChar)
-            let tail = attrLine.index(head, offsetByUnicodeScalars: token.length)
+        func stapleEmptyTokens(upToLineIndex endLine: Int) {
+            for lineIndex in lastLine..<endLine {
+                assert(lastLine == lineIndex)
+                
+                let line = lines[lastLine]
+                guard let lastCharIndex = line.index(line.startIndex, offsetBy: lastChar, limitedBy: line.endIndex) else {
+                    assertionFailure("bounding error")
+                    continue
+                }
+                let remaining = line[lastCharIndex...]
+                if !remaining.isEmpty {
+                    result.append(.init(text: remaining))
+                }
+                let lineBreak = "\n"
+                result.append(.init(text: lineBreak[...]))
+                lastLine += 1
+                lastChar = 0
+            }
+        }
+        
+        for semanticToken in semanticTokens {
+            // assert order
+            assert(semanticToken.line >= lastLine)
             
-            var attributes = AttributeContainer()
-            switch token.type {
-            case .keyword:
-                attributes.foregroundColor = NSColor.systemPink
-            case .comment:
-                attributes.foregroundColor = NSColor.systemGray
-            case .string:
-                attributes.foregroundColor = NSColor.systemOrange
-            case .number:
-                attributes.foregroundColor = NSColor.systemPurple
-            case .enum:
-                attributes.foregroundColor = NSColor.systemMint
-            case .enumMember:
-                attributes.foregroundColor = NSColor.systemGreen
-            case .macro:
-                attributes.foregroundColor = NSColor.systemBrown
-            case .identifier:
-                break
-            default:
-                attributes.foregroundColor = NSColor.systemIndigo
+            stapleEmptyTokens(upToLineIndex: semanticToken.line)
+            
+            assert(semanticToken.line == lastLine)
+            assert(semanticToken.startChar >= lastChar)
+            
+            let line = lines[lastLine]
+            guard let emptyStart = line.index(line.startIndex, offsetBy: lastChar, limitedBy: line.endIndex),
+                  let tokenStart = line.index(line.startIndex, offsetBy: semanticToken.startChar, limitedBy: line.endIndex),
+                  let tokenEnd = line.index(tokenStart, offsetBy: semanticToken.length, limitedBy: line.endIndex) else {
+                assertionFailure("bounding error")
+                continue
             }
             
-            attrLine[head..<tail].mergeAttributes(attributes)
-            attrLines[token.line] = attrLine
+            let emptyChars = line[emptyStart..<tokenStart]
+            if !emptyChars.isEmpty {
+                result.append(.init(text: emptyChars))
+            }
+            
+            result.append(.init(text: line[tokenStart..<tokenEnd], semanticToken: semanticToken))
+            lastChar = semanticToken.startChar + semanticToken.length
         }
         
-        var gather = AttributedString()
-        attrLines.forEach {
-            gather.append($0)
-            gather.append(AttributedString("\n"))
-        }
+        // do another pass to catch the characters after the last semanticToken
+        stapleEmptyTokens(upToLineIndex: lines.count)
         
-        var globalContainer = AttributeContainer()
-        globalContainer.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        gather.mergeAttributes(globalContainer)
-        
-        let nsAttributed = NSAttributedString(gather)
-        let rtf = nsAttributed.rtf(from: NSRange(location: 0, length: nsAttributed.length))
-        let random = UUID()
-        let outputURL = URL(fileURLWithPath: "\(random.uuidString).rtf")
-        try! rtf!.write(to: outputURL)
-        print(outputURL.absoluteString)
-        
+        return result
     }
 }
 
