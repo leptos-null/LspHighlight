@@ -10,11 +10,11 @@ final class LspHandler: MessageHandler {
     private static let logger = Logger(subsystem: "null.leptos.LspHighlight", category: "LspHandler")
     
     func handle<Notification>(_ params: Notification, from clientID: ObjectIdentifier) where Notification: NotificationType {
-        Self.logger.info("Got \(String(describing: params)))")
+        Self.logger.info("Got \(String(describing: params))")
     }
     
     func handle<Request>(_ params: Request, id: RequestID, from clientID: ObjectIdentifier, reply: @escaping (LSPResult<Request.Response>) -> Void) where Request: RequestType {
-        Self.logger.info("Got \(String(describing: params)))")
+        Self.logger.info("Got \(String(describing: params))")
     }
 }
 
