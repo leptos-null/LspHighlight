@@ -155,16 +155,14 @@ struct LspHighlight: ParsableCommand {
         let stapledTokens = StapledToken.staple(semanticTokens: tokens, to: text)
         
         let html: String = stapledTokens.reduce(into: "") { partialResult, token in
-            // TODO: use `replace` instead of `replacingOccurrences`
-            //   when we move to macOS 13+
             // thanks to https://www.w3.org/International/questions/qa-escapes#use
-            let cleanHtml = token.text
-                .replacingOccurrences(of: "&", with: "&amp;") // this has to be first, otherwise we'll replace '&' in the other escapes
-                .replacingOccurrences(of: "<", with: "&lt;")
-                .replacingOccurrences(of: ">", with: "&gt;")
-                .replacingOccurrences(of: "\"", with: "&quot;")
-                .replacingOccurrences(of: "'", with: "&apos;")
-            
+            let cleanHtml = token.text.replacingCharacters([
+                "<": "&lt;",
+                ">": "&gt;",
+                "&": "&amp;",
+                "\"": "&quot;",
+                "'": "&apos;",
+            ])
             if let semanticToken = token.semanticToken {
                 let classList = [ "lsp-type-\(semanticToken.type.rawValue)" ] + semanticToken.modifiers.map { "lsp-modifier-\($0.rawValue)" }
                 partialResult.append("<span class=\"\(classList.joined(separator: " "))\">")
@@ -176,6 +174,18 @@ struct LspHighlight: ParsableCommand {
         }
         
         print(html)
+    }
+}
+
+extension StringProtocol {
+    func replacingCharacters(_ map: [Character: String]) -> String {
+        reduce(into: "") { partialResult, character in
+            if let replacement = map[character] {
+                partialResult.append(replacement)
+            } else {
+                partialResult.append(character)
+            }
+        }
     }
 }
 
