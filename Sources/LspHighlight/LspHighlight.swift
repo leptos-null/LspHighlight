@@ -8,17 +8,17 @@ import OSLog
 final class LspHandler: MessageHandler {
     private static let logger = Logger(subsystem: "null.leptos.LspHighlight", category: "LspHandler")
     
-    func handle<Notification>(_ params: Notification, from clientID: ObjectIdentifier) where Notification: NotificationType {
-        Self.logger.info("Got \(String(describing: params))")
+    func handle(_ notification: some NotificationType) {
+        Self.logger.info("Got \(String(describing: notification))")
     }
     
-    func handle<Request>(_ params: Request, id: RequestID, from clientID: ObjectIdentifier, reply: @escaping (LSPResult<Request.Response>) -> Void) where Request: RequestType {
-        Self.logger.info("Got \(String(describing: params))")
+    func handle<Request>(_ request: Request, id: RequestID, reply: @escaping @Sendable (LSPResult<Request.Response>) -> Void) where Request: RequestType {
+        Self.logger.info("Got \(String(describing: request))")
     }
 }
 
 @main
-struct LspHighlight: ParsableCommand {
+struct LspHighlight: AsyncParsableCommand {
     private static var knownLanguageIds: [String] {
         Language.allKnownCases.map(\.rawValue)
     }
@@ -59,6 +59,7 @@ struct LspHighlight: ParsableCommand {
         let serverToClient = Pipe()
         
         let connection = JSONRPCConnection(
+            name: "LspHighlight",
             protocol: .lspProtocol,
             inFD: serverToClient.fileHandleForReading,
             outFD: clientToServer.fileHandleForWriting
@@ -80,7 +81,7 @@ struct LspHighlight: ParsableCommand {
         return connection
     }
     
-    mutating func run() throws {
+    mutating func run() async throws {
         let lspServer = URL(fileURLWithPath: lspServerPath)
         let sourceFile = URL(fileURLWithPath: filePath)
         
@@ -122,7 +123,7 @@ struct LspHighlight: ParsableCommand {
             workspaceFolders: nil
         )
         
-        let initResponse = try connection.sendSync(initRequest)
+        let initResponse = try await connection.send(initRequest)
         
         // sourcekit-lsp returns `nil` here, however it does provide tokens.
         // additionally, sourcekit-lsp will automatically call out to clangd
@@ -135,7 +136,7 @@ struct LspHighlight: ParsableCommand {
         // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#positionEncodingKind
         let positionEncoding = initResponse.capabilities.positionEncoding ?? .utf16
         
-        let sourceFileURI = DocumentURI(string: sourceFile.absoluteString)
+        let sourceFileURI = try DocumentURI(string: sourceFile.absoluteString)
         let sourceText = try String(contentsOf: sourceFile)
         
         let didOpenNotif = DidOpenTextDocumentNotification(
@@ -147,7 +148,7 @@ struct LspHighlight: ParsableCommand {
         connection.send(didOpenNotif)
         
         let semanticTokensRequest = DocumentSemanticTokensRequest(textDocument: TextDocumentIdentifier(sourceFileURI))
-        let semanticTokensResponse = try connection.sendSync(semanticTokensRequest)
+        let semanticTokensResponse = try await connection.send(semanticTokensRequest)
         
         guard let semanticTokensResponse else {
             Self.exit(withError: CleanExit.message("No semantic tokens response"))
@@ -288,6 +289,16 @@ struct LspHighlight: ParsableCommand {
                 partialResult.append("</span>")
             } else {
                 partialResult.append(contentsOf: cleanHtml)
+            }
+        }
+    }
+}
+
+extension JSONRPCConnection {
+    func send<Request: RequestType>(_ request: Request) async throws -> Request.Response {
+        try await withCheckedThrowingContinuation { continuation in
+            _ = self.send(request) { result in
+                continuation.resume(with: result)
             }
         }
     }
