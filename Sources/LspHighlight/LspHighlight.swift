@@ -1,5 +1,6 @@
 import Foundation
 import ArgumentParser
+import ClangWrapper
 import LanguageServerProtocol
 import LanguageServerProtocolJSONRPC
 import OSLog
@@ -152,27 +153,121 @@ struct LspHighlight: ParsableCommand {
         guard let semanticTokensResponse else {
             Self.exit(withError: CleanExit.message("No semantic tokens response"))
         }
-        let tokens = SemanticTokenAbsolute.decode(lspEncoded: semanticTokensResponse.data, tokenLegend: tokenLegend)
+        let sourceLines = sourceText.split(separator: "\n", omittingEmptySubsequences: false)
+        
+        let semanticTokens = SemanticTokenAbsolute.decode(lspEncoded: semanticTokensResponse.data, tokenLegend: tokenLegend)
+        
+        let lexicalTokens: [SemanticTokenAbsolute]
+        switch sourceLanguage {
+        case .c, .cpp, .objective_c, .objective_cpp:
+            // languages that we know of supported by libclang
+            let clangTokens = CWToken.tokens(forCommand: [
+                "-isysroot",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+                sourceFile.absoluteURL.path
+            ])
+            if let clangTokens {
+                lexicalTokens = switch positionEncoding {
+                case .utf8:
+                    SemanticTokenAbsolute.translate(clangTokens, for: sourceLines, outputEncoding: \.utf8)
+                case .utf16:
+                    SemanticTokenAbsolute.translate(clangTokens, for: sourceLines, outputEncoding: \.utf16)
+                case .utf32:
+                    SemanticTokenAbsolute.translate(clangTokens, for: sourceLines, outputEncoding: \.unicodeScalars)
+                default:
+                    SemanticTokenAbsolute.translate(clangTokens, for: sourceLines)
+                }
+            } else {
+                assertionFailure("CWToken.tokens(forCommand:) failed")
+                lexicalTokens = []
+            }
+        default:
+            // no additional provider for lexical tokens
+            lexicalTokens = []
+        }
+        
+        let tokens = Self.combineTokens(semantic: semanticTokens, lexical: lexicalTokens)
         
         switch positionEncoding {
         case .utf8:
-            Self.process(tokens: tokens, for: sourceText, encodingView: \.utf8)
+            Self.process(tokens: tokens, for: sourceLines, encodingView: \.utf8)
         case .utf16:
-            Self.process(tokens: tokens, for: sourceText, encodingView: \.utf16)
+            Self.process(tokens: tokens, for: sourceLines, encodingView: \.utf16)
         case .utf32:
             // per Swift.String documentation:
             //   > A string's `unicodeScalars` property is a collection of Unicode scalar
             //   > values, the 21-bit codes that are the basic unit of Unicode. Each scalar
             //   > value is represented by a `Unicode.Scalar` instance and is equivalent to a
             //   > UTF-32 code unit.
-            Self.process(tokens: tokens, for: sourceText, encodingView: \.unicodeScalars)
+            Self.process(tokens: tokens, for: sourceLines, encodingView: \.unicodeScalars)
         default:
-            Self.process(tokens: tokens, for: sourceText)
+            Self.process(tokens: tokens, for: sourceLines)
         }
     }
     
-    private static func process<StringView: BidirectionalCollection>(tokens: [SemanticTokenAbsolute], for text: String, encodingView: KeyPath<String.SubSequence, StringView> = \.self) where StringView.Index == String.SubSequence.Index {
-        let stapledTokens = StapledToken.staple(semanticTokens: tokens, to: text, encodingView: encodingView)
+    private static func combineTokens(semantic: [SemanticTokenAbsolute], lexical: [SemanticTokenAbsolute]) -> [SemanticTokenAbsolute] {
+        var semanticPop = semantic
+        var lexicalPop = lexical
+        
+        var result: [SemanticTokenAbsolute] = []
+        
+        while let semanticHead = semanticPop.first, let lexicalHead = lexicalPop.first {
+            if lexicalHead.line < semanticHead.line {
+                result.append(lexicalHead)
+                lexicalPop.removeFirst()
+                continue
+            }
+            if semanticHead.line < lexicalHead.line {
+                result.append(semanticHead)
+                semanticPop.removeFirst()
+                continue
+            }
+            assert(semanticHead.line == lexicalHead.line)
+            if lexicalHead.startChar < semanticHead.startChar {
+                if lexicalHead.startChar + lexicalHead.length > semanticHead.startChar {
+                    // lexical overlaps semantic, drop lexical
+                    lexicalPop.removeFirst()
+                    continue
+                }
+                result.append(lexicalHead)
+                lexicalPop.removeFirst()
+                continue
+            }
+            if semanticHead.startChar < lexicalHead.startChar {
+                if semanticHead.startChar + semanticHead.length > lexicalHead.startChar {
+                    // semantic overlaps lexical, drop lexical
+                    lexicalPop.removeFirst()
+                    continue
+                }
+                result.append(semanticHead)
+                semanticPop.removeFirst()
+                continue
+            }
+            assert(semanticHead.startChar == lexicalHead.startChar)
+            if lexicalHead.length == 0 {
+                // I'm not sure why this would be helpful, but emit the token since there's no overlap
+                result.append(lexicalHead)
+                lexicalPop.removeFirst()
+                continue
+            }
+            if semanticHead.length == 0 {
+                // I'm not sure why this would be helpful, but emit the token since there's no overlap
+                result.append(semanticHead)
+                semanticPop.removeFirst()
+                continue
+            }
+            // lexical overlaps semantic, drop lexical
+            lexicalPop.removeFirst()
+        }
+        
+        result.append(contentsOf: semanticPop)
+        result.append(contentsOf: lexicalPop)
+        
+        return result
+    }
+    
+    private static func process<StringView: BidirectionalCollection>(tokens: [SemanticTokenAbsolute], for lines: [String.SubSequence], encodingView: KeyPath<String.SubSequence, StringView> = \.self) where StringView.Index == String.SubSequence.Index {
+        let stapledTokens = StapledToken.staple(semanticTokens: tokens, to: lines, encodingView: encodingView)
         
         let html: String = stapledTokens.reduce(into: "") { partialResult, token in
             // thanks to https://www.w3.org/International/questions/qa-escapes#use
@@ -220,12 +315,10 @@ struct StapledToken {
 }
 
 extension StapledToken {
-    static func staple<StringView: BidirectionalCollection>(semanticTokens: [SemanticTokenAbsolute], to text: String, encodingView: KeyPath<String.SubSequence, StringView> = \.self) -> [Self] where StringView.Index == String.SubSequence.Index {
+    static func staple<StringView: BidirectionalCollection>(semanticTokens: [SemanticTokenAbsolute], to lines: [String.SubSequence], encodingView: KeyPath<String.SubSequence, StringView> = \.self) -> [Self] where StringView.Index == String.SubSequence.Index {
         var result: [Self] = []
         var lastLine: Int = 0
         var lastChar: Int = 0
-        
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
         
         func stapleEmptyTokens(upToLineIndex endLine: Int) {
             for lineIndex in lastLine..<endLine {
@@ -407,5 +500,85 @@ extension SemanticTokenAbsolute {
         }
         
         return result
+    }
+}
+
+extension SemanticTokenAbsolute {
+    /// - Parameters:
+    ///   - line: The line to index into
+    ///   - startIndexUTF8: The utf8 one-based index for the first character in the range (inclusive), or `nil` to start at the beginning of the line
+    ///   - endIndexUTF8: The utf8 one-based index for the last character in the range (non-inclusive), or `nil` to end at the end of the line
+    ///   - outputEncoding: The key path to the string view with which the result should be with respect to
+    private static func translateClangRange<StringView: BidirectionalCollection>(line: String.SubSequence, startIndexUTF8: UInt32?, endIndexUTF8: UInt32?, outputEncoding: KeyPath<String.SubSequence, StringView> = \.self) -> (startChar: Int, length: Int)? where StringView.Index == String.SubSequence.Index {
+        let inputLineView = line.utf8
+        let outputLineView = line[keyPath: outputEncoding]
+        
+        let startIndex: StringView.Index
+        if let startIndexUTF8 {
+            guard let resolved = inputLineView.index(inputLineView.startIndex, offsetBy: Int(startIndexUTF8) - 1, limitedBy: inputLineView.endIndex) else {
+                assertionFailure("Bounding error: \(startIndexUTF8 - 1) out of bounds (\(inputLineView.count))")
+                return nil
+            }
+            startIndex = resolved
+        } else {
+            startIndex = inputLineView.startIndex
+        }
+        
+        let endIndex: StringView.Index
+        if let endIndexUTF8 {
+            guard let resolved = inputLineView.index(inputLineView.startIndex, offsetBy: Int(endIndexUTF8) - 1, limitedBy: inputLineView.endIndex) else {
+                assertionFailure("Bounding error: \(endIndexUTF8 - 1) out of bounds (\(inputLineView.count))")
+                return nil
+            }
+            endIndex = resolved
+        } else {
+            endIndex = inputLineView.endIndex
+        }
+        
+        return (
+            outputLineView.distance(from: outputLineView.startIndex, to: startIndex),
+            outputLineView.distance(from: startIndex, to: endIndex)
+        )
+    }
+    
+    static func translate<StringView: BidirectionalCollection>(_ tokens: [CWToken], for lines: [String.SubSequence], outputEncoding: KeyPath<String.SubSequence, StringView> = \.self) -> [Self] where StringView.Index == String.SubSequence.Index {
+        tokens.flatMap { token -> [SemanticTokenAbsolute] in
+            guard let type = SemanticTokenTypes(token.type) else { return [] }
+            return (token.startLocation.line...token.endLocation.line).compactMap { oneBasedLineIndex in
+                let lineIndex = Int(oneBasedLineIndex) - 1
+                let translatedRange = Self.translateClangRange(
+                    line: lines[lineIndex],
+                    startIndexUTF8: (oneBasedLineIndex == token.startLocation.line) ? token.startLocation.column : nil,
+                    endIndexUTF8: (oneBasedLineIndex == token.endLocation.line) ? token.endLocation.column : nil,
+                    outputEncoding: outputEncoding
+                )
+                
+                guard let translatedRange else { return nil }
+                return SemanticTokenAbsolute(
+                    line: lineIndex,
+                    startChar: translatedRange.startChar, length: translatedRange.length,
+                    type: type, modifiers: []
+                )
+            }
+        }
+    }
+}
+
+extension SemanticTokenTypes {
+    init?(_ type: CWTokenType) {
+        switch type {
+        case .unknown: return nil
+        case .comment: self = .comment
+        case .keyword: self = .keyword
+        case .operator: self = .operator
+        case .literalString: self = .string
+        case .literalCharacter: self = .number
+        case .literalNumeric: self = .number
+        case .preprocessingDirective: self = .macro
+        case .inclusionDirective: self = .macro
+        case .macroDefinition: self = .macro
+        @unknown default:
+            return nil
+        }
     }
 }

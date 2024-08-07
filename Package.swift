@@ -20,6 +20,7 @@ let package = Package(
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "LSPBindings", package: "sourcekit-lsp"),
+                .target(name: "ClangWrapper")
             ]
         ),
         .target(
