@@ -22,5 +22,17 @@ let package = Package(
                 .product(name: "LSPBindings", package: "sourcekit-lsp"),
             ]
         ),
+        .target(
+            name: "ClangWrapper",
+            cSettings: [
+                .headerSearchPath("include-extra")
+            ], linkerSettings: [
+                .unsafeFlags([
+                    "-lclang",
+                    "-L/Library/Developer/CommandLineTools/usr/lib",
+                    "-rpath", "/Library/Developer/CommandLineTools/usr/lib"
+                ])
+            ]
+        )
     ]
 )
