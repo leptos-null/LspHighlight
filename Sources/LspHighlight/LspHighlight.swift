@@ -327,7 +327,7 @@ extension StapledToken {
                 let line = lines[lastLine]
                 let lineView = line[keyPath: encodingView]
                 guard let lastCharIndex = lineView.index(lineView.startIndex, offsetBy: lastChar, limitedBy: lineView.endIndex) else {
-                    assertionFailure("bounding error")
+                    assertionFailure("Bounding error: \(lastChar) out of bounds (\(lineView.count))")
                     continue
                 }
                 let remaining = line[lastCharIndex...]
@@ -352,10 +352,16 @@ extension StapledToken {
             
             let line = lines[lastLine]
             let lineView = line[keyPath: encodingView]
-            guard let emptyStart = lineView.index(lineView.startIndex, offsetBy: lastChar, limitedBy: lineView.endIndex),
-                  let tokenStart = lineView.index(lineView.startIndex, offsetBy: semanticToken.startChar, limitedBy: lineView.endIndex),
-                  let tokenEnd = lineView.index(tokenStart, offsetBy: semanticToken.length, limitedBy: lineView.endIndex) else {
-                assertionFailure("bounding error")
+            guard let emptyStart = lineView.index(lineView.startIndex, offsetBy: lastChar, limitedBy: lineView.endIndex) else {
+                assertionFailure("Bounding error: \(lastChar) out of bounds (\(lineView.count))")
+                continue
+            }
+            guard let tokenStart = lineView.index(lineView.startIndex, offsetBy: semanticToken.startChar, limitedBy: lineView.endIndex) else {
+                assertionFailure("Bounding error: \(semanticToken.startChar) out of bounds (\(lineView.count))")
+                continue
+            }
+            guard let tokenEnd = lineView.index(tokenStart, offsetBy: semanticToken.length, limitedBy: lineView.endIndex) else {
+                assertionFailure("Bounding error: \(semanticToken.startChar) + \(semanticToken.length) out of bounds (\(lineView.count))")
                 continue
             }
             
