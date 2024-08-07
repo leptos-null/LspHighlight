@@ -110,6 +110,9 @@ struct LspHighlight: ParsableCommand {
                     tokenModifiers: SemanticTokenModifiers.allKnownCases.map(\.rawValue),
                     formats: [.relative]
                 )
+            ),
+            general: .init(
+                positionEncodings: [.utf8, .utf16, .utf32]
             )
         )
         
@@ -129,6 +132,8 @@ struct LspHighlight: ParsableCommand {
             tokenTypes: SemanticTokenTypes.sourceKitCases.map(\.rawValue),
             tokenModifiers: SemanticTokenModifiers.sourceKitCases.map(\.rawValue)
         )
+        // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#positionEncodingKind
+        let positionEncoding = initResponse.capabilities.positionEncoding ?? .utf16
         
         let sourceFileURI = DocumentURI(string: sourceFile.absoluteString)
         let sourceText = try String(contentsOf: sourceFile)
@@ -148,11 +153,26 @@ struct LspHighlight: ParsableCommand {
             Self.exit(withError: CleanExit.message("No semantic tokens response"))
         }
         let tokens = SemanticTokenAbsolute.decode(lspEncoded: semanticTokensResponse.data, tokenLegend: tokenLegend)
-        Self.process(tokens: tokens, for: sourceText)
+        
+        switch positionEncoding {
+        case .utf8:
+            Self.process(tokens: tokens, for: sourceText, encodingView: \.utf8)
+        case .utf16:
+            Self.process(tokens: tokens, for: sourceText, encodingView: \.utf16)
+        case .utf32:
+            // per Swift.String documentation:
+            //   > A string's `unicodeScalars` property is a collection of Unicode scalar
+            //   > values, the 21-bit codes that are the basic unit of Unicode. Each scalar
+            //   > value is represented by a `Unicode.Scalar` instance and is equivalent to a
+            //   > UTF-32 code unit.
+            Self.process(tokens: tokens, for: sourceText, encodingView: \.unicodeScalars)
+        default:
+            Self.process(tokens: tokens, for: sourceText)
+        }
     }
     
-    private static func process(tokens: [SemanticTokenAbsolute], for text: String) {
-        let stapledTokens = StapledToken.staple(semanticTokens: tokens, to: text)
+    private static func process<StringView: BidirectionalCollection>(tokens: [SemanticTokenAbsolute], for text: String, encodingView: KeyPath<String.SubSequence, StringView> = \.self) where StringView.Index == String.SubSequence.Index {
+        let stapledTokens = StapledToken.staple(semanticTokens: tokens, to: text, encodingView: encodingView)
         
         let html: String = stapledTokens.reduce(into: "") { partialResult, token in
             // thanks to https://www.w3.org/International/questions/qa-escapes#use
@@ -200,7 +220,7 @@ struct StapledToken {
 }
 
 extension StapledToken {
-    static func staple(semanticTokens: [SemanticTokenAbsolute], to text: String) -> [Self] {
+    static func staple<StringView: BidirectionalCollection>(semanticTokens: [SemanticTokenAbsolute], to text: String, encodingView: KeyPath<String.SubSequence, StringView> = \.self) -> [Self] where StringView.Index == String.SubSequence.Index {
         var result: [Self] = []
         var lastLine: Int = 0
         var lastChar: Int = 0
@@ -212,7 +232,8 @@ extension StapledToken {
                 assert(lastLine == lineIndex)
                 
                 let line = lines[lastLine]
-                guard let lastCharIndex = line.index(line.startIndex, offsetBy: lastChar, limitedBy: line.endIndex) else {
+                let lineView = line[keyPath: encodingView]
+                guard let lastCharIndex = lineView.index(lineView.startIndex, offsetBy: lastChar, limitedBy: lineView.endIndex) else {
                     assertionFailure("bounding error")
                     continue
                 }
@@ -237,9 +258,10 @@ extension StapledToken {
             assert(semanticToken.startChar >= lastChar)
             
             let line = lines[lastLine]
-            guard let emptyStart = line.index(line.startIndex, offsetBy: lastChar, limitedBy: line.endIndex),
-                  let tokenStart = line.index(line.startIndex, offsetBy: semanticToken.startChar, limitedBy: line.endIndex),
-                  let tokenEnd = line.index(tokenStart, offsetBy: semanticToken.length, limitedBy: line.endIndex) else {
+            let lineView = line[keyPath: encodingView]
+            guard let emptyStart = lineView.index(lineView.startIndex, offsetBy: lastChar, limitedBy: lineView.endIndex),
+                  let tokenStart = lineView.index(lineView.startIndex, offsetBy: semanticToken.startChar, limitedBy: lineView.endIndex),
+                  let tokenEnd = lineView.index(tokenStart, offsetBy: semanticToken.length, limitedBy: lineView.endIndex) else {
                 assertionFailure("bounding error")
                 continue
             }
