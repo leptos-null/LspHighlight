@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <ClangWrapper/CWCompileCommand.h>
 
 struct CWFileLocation {
     /// one-based
@@ -27,6 +28,10 @@ typedef NS_ENUM(NSUInteger, CWTokenType) {
 
 @property (nonatomic) CWTokenType type;
 
-+ (nullable NSArray<CWToken *> *)tokensForCommand:(nonnull NSArray<NSString *> *)commands;
++ (nullable NSArray<CWToken *> *)tokensForCommand:(nonnull CWCompileCommand *)command;
+
+/// @param commands The parameters that would be passed on the command line to compile a source file
+/// @param isFull @c YES if @c commands starts with the path to the compiler
++ (nullable NSArray<CWToken *> *)tokensForCommand:(nonnull NSArray<NSString *> *)commands isFull:(BOOL)isFull;
 
 @end

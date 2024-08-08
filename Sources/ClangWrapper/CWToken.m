@@ -3,7 +3,11 @@
 
 @implementation CWToken
 
-+ (NSArray<CWToken *> *)tokensForCommand:(NSArray<NSString *> *)commands {
++ (NSArray<CWToken *> *)tokensForCommand:(CWCompileCommand *)command {
+    return [self tokensForCommand:command.command isFull:YES];
+}
+
++ (NSArray<CWToken *> *)tokensForCommand:(NSArray<NSString *> *)commands isFull:(BOOL)isFull {
     NSUInteger const count = commands.count;
     const char **const bridge = malloc(sizeof(char *) * count);
     
@@ -11,12 +15,12 @@
         bridge[i] = commands[i].UTF8String;
     }
     
-    NSArray<CWToken *> *tokens = [self tokensForCommand:bridge count:(int)count];
+    NSArray<CWToken *> *tokens = [self tokensForCommand:bridge count:(int)count isFull:isFull];
     free(bridge);
     return tokens;
 }
 
-+ (NSArray<CWToken *> *)tokensForCommand:(const char *const *)commandLineParams count:(int)commandLineParamCount {
++ (NSArray<CWToken *> *)tokensForCommand:(const char *const *)commandLineParams count:(int)commandLineParamCount isFull:(BOOL)isFull {
     int displayDiagnostics;
 #if DEBUG
     displayDiagnostics = 1;
@@ -27,7 +31,13 @@
     
     CXTranslationUnit targetUnit = NULL;
     unsigned parseOptions = CXTranslationUnit_DetailedPreprocessingRecord | CXTranslationUnit_KeepGoing | CXTranslationUnit_IncludeAttributedTypes;
-    enum CXErrorCode const parseCode = clang_parseTranslationUnit2(index, NULL, commandLineParams, commandLineParamCount, NULL, 0, parseOptions, &targetUnit);
+    
+    enum CXErrorCode parseCode;
+    if (isFull) {
+        parseCode = clang_parseTranslationUnit2FullArgv(index, NULL, commandLineParams, commandLineParamCount, NULL, 0, parseOptions, &targetUnit);
+    } else {
+        parseCode = clang_parseTranslationUnit2(index, NULL, commandLineParams, commandLineParamCount, NULL, 0, parseOptions, &targetUnit);
+    }
     
     if (parseCode != CXError_Success) {
         return nil;

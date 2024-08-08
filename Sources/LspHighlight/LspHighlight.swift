@@ -165,7 +165,7 @@ struct LspHighlight: ParsableCommand {
                 "-isysroot",
                 "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
                 sourceFile.absoluteURL.path
-            ])
+            ], isFull: false)
             if let clangTokens {
                 lexicalTokens = switch positionEncoding {
                 case .utf8:
