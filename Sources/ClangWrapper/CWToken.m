@@ -30,7 +30,7 @@
     CXIndex const index = clang_createIndex(0, displayDiagnostics);
     
     CXTranslationUnit targetUnit = NULL;
-    unsigned parseOptions = CXTranslationUnit_DetailedPreprocessingRecord | CXTranslationUnit_KeepGoing | CXTranslationUnit_IncludeAttributedTypes;
+    unsigned const parseOptions = CXTranslationUnit_DetailedPreprocessingRecord | CXTranslationUnit_KeepGoing | CXTranslationUnit_IncludeAttributedTypes | CXTranslationUnit_VisitImplicitAttributes;
     
     enum CXErrorCode parseCode;
     if (isFull) {
