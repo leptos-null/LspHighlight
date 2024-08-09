@@ -282,6 +282,10 @@ struct LspHighlight: ParsableCommand {
         var result: [SemanticTokenAbsolute] = []
         
         while let semanticHead = semanticPop.first, let lexicalHead = lexicalPop.first {
+            if let mostRecentPush = result.last {
+                assert(mostRecentPush.precedes(semanticHead))
+                assert(mostRecentPush.precedes(lexicalHead))
+            }
             if lexicalHead.line < semanticHead.line {
                 result.append(lexicalHead)
                 lexicalPop.removeFirst()
@@ -391,6 +395,14 @@ extension StringProtocol {
                 partialResult.append(character)
             }
         }
+    }
+}
+
+extension SemanticTokenAbsolute {
+    func precedes(_ other: Self) -> Bool {
+        if self.line < other.line { return true }
+        if self.line == other.line, self.startChar < other.startChar { return true }
+        return false
     }
 }
 
