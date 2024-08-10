@@ -74,7 +74,7 @@ struct LspHighlight: ParsableCommand {
         process.standardOutput = serverToClient
         process.standardInput = clientToServer
         process.terminationHandler = { process in
-            print("build server exited: \(process.terminationReason) \(process.terminationStatus)")
+            print("lsp server exited: \(process.terminationReason) \(process.terminationStatus)", to: .standardError)
             connection.close()
         }
         try process.run()
@@ -234,7 +234,7 @@ struct LspHighlight: ParsableCommand {
         if let database {
             let commands = database.compileCommands(forFile: sourceFile)
             if commands.count > 1 {
-                print("Warning: compilation database contains more than 1 command to compile file. Using the first one")
+                print("Warning: compilation database contains more than 1 command to compile file. Using the first one", to: .standardError)
             }
             if let firstCommand = commands.first {
                 databaseCommand = firstCommand.command
@@ -549,4 +549,16 @@ extension SemanticTokenAbsolute {
         
         return result
     }
+}
+
+// after a few iteration, I decided on this function to print to stderr.
+// I explored some of the approaches in this article: https://nshipster.com/textoutputstream/
+// however I didn't like having an additional variable at each call site.
+// we could wrap those two lines (variable declaration + print call) in another function;
+// when using that, I didn't like that the call site didn't look like a standard print call,
+// so I ended up with this function signature.
+func print(_ items: Any..., separator: String = " ", terminator: String = "\n", to output: FileHandle) {
+    var result = String()
+    Swift.print(items, separator: separator, terminator: terminator, to: &result)
+    try? output.write(contentsOf: Data(result.utf8))
 }
