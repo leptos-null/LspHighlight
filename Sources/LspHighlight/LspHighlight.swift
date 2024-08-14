@@ -183,21 +183,23 @@ struct LspHighlight: ParsableCommand {
         
         let tokens = Self.combineTokens(semantic: semanticTokens, lexical: lexicalTokens)
         
-        switch positionEncoding {
+        let html: String = switch positionEncoding {
         case .utf8:
-            Self.process(tokens: tokens, for: sourceLines, encodingView: \.utf8)
+            Self.htmlFor(tokens: tokens, lines: sourceLines, encodingView: \.utf8)
         case .utf16:
-            Self.process(tokens: tokens, for: sourceLines, encodingView: \.utf16)
+            Self.htmlFor(tokens: tokens, lines: sourceLines, encodingView: \.utf16)
         case .utf32:
             // per Swift.String documentation:
             //   > A string's `unicodeScalars` property is a collection of Unicode scalar
             //   > values, the 21-bit codes that are the basic unit of Unicode. Each scalar
             //   > value is represented by a `Unicode.Scalar` instance and is equivalent to a
             //   > UTF-32 code unit.
-            Self.process(tokens: tokens, for: sourceLines, encodingView: \.unicodeScalars)
+            Self.htmlFor(tokens: tokens, lines: sourceLines, encodingView: \.unicodeScalars)
         default:
-            Self.process(tokens: tokens, for: sourceLines)
+            Self.htmlFor(tokens: tokens, lines: sourceLines)
         }
+        
+        print(html)
     }
     
     private static func combineTokens(semantic: [SemanticTokenAbsolute], lexical: [SemanticTokenAbsolute]) -> [SemanticTokenAbsolute] {
@@ -265,10 +267,10 @@ struct LspHighlight: ParsableCommand {
         return result
     }
     
-    private static func process<StringView: BidirectionalCollection>(tokens: [SemanticTokenAbsolute], for lines: [String.SubSequence], encodingView: KeyPath<String.SubSequence, StringView> = \.self) where StringView.Index == String.SubSequence.Index {
+    private static func htmlFor<StringView: BidirectionalCollection>(tokens: [SemanticTokenAbsolute], lines: [String.SubSequence], encodingView: KeyPath<String.SubSequence, StringView> = \.self) -> String where StringView.Index == String.SubSequence.Index {
         let stapledTokens = StapledToken.staple(semanticTokens: tokens, to: lines, encodingView: encodingView)
         
-        let html: String = stapledTokens.reduce(into: "") { partialResult, token in
+        return stapledTokens.reduce(into: "") { partialResult, token in
             // thanks to https://www.w3.org/International/questions/qa-escapes#use
             let cleanHtml = token.text.replacingCharacters([
                 "<": "&lt;",
@@ -286,8 +288,6 @@ struct LspHighlight: ParsableCommand {
                 partialResult.append(contentsOf: cleanHtml)
             }
         }
-        
-        print(html)
     }
 }
 
