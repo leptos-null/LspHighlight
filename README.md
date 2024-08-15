@@ -36,6 +36,10 @@ This section demonstrates how `lsp-highlight` may be used.
 
 We have the code snippet below in a file named `main.m`.
 
+<details>
+
+<summary>Input source code</summary>
+
 (This file is based off of <https://github.com/leptos-null/iobat/blob/5a2e6719d7ab503612cc0654670bd50c1562fa2e/src/main.m>)
 
 ```objc
@@ -127,7 +131,14 @@ int main(int argc, char *argv[]) {
 }
 ```
 
+</details>
+
+
 We then run `lsp-highlight -S $(xcrun -f clangd) main.m` to produce the following HTML output:
+
+<details>
+
+<summary>HTML output</summary>
 
 ```html
 <span class="lsp-type-comment">//</span>
@@ -217,6 +228,9 @@ We then run `lsp-highlight -S $(xcrun -f clangd) main.m` to produce the followin
     <span class="lsp-type-keyword">return</span> <span class="lsp-type-variable lsp-modifier-functionScope">ret</span>;
 }
 ```
+
+</details>
+
 
 We can then place the snippet above into a full HTML document.
 With some CSS, this is what the result may look like:
