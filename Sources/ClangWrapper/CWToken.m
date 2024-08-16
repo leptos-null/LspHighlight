@@ -152,10 +152,10 @@
         }
         
         CXString cursorKindSpelling = clang_getCursorKindSpelling(cursorKind);
-        printf("[%u:%u -> %u:%u] '%s' -> %s [%s]\n",
-               startLocation.line, startLocation.column,
-               endLocation.line, endLocation.column,
-               clang_getCString(tokenSpelling), tokenKindSpelling, clang_getCString(cursorKindSpelling));
+        fprintf(stderr, "[%u:%u -> %u:%u] '%s' -> %s [%s]\n",
+                startLocation.line, startLocation.column,
+                endLocation.line, endLocation.column,
+                clang_getCString(tokenSpelling), tokenKindSpelling, clang_getCString(cursorKindSpelling));
         
         clang_disposeString(cursorKindSpelling);
         clang_disposeString(tokenSpelling);
