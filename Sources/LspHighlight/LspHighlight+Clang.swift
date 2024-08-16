@@ -6,6 +6,7 @@ import ClangWrapper
 extension LspHighlight {
     static func clangTokensFor(sourceFile: URL, buildDirectory: URL? = nil) throws -> [CWToken]? {
         let command = try Self.compileCommandFor(sourceFile: sourceFile, buildDirectory: buildDirectory)
+        print("Calling into libclang with", command, to: .standardError)
         return CWToken.tokens(forCommand: command, isFull: true)
     }
     
