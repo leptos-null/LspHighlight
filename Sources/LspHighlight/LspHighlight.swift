@@ -158,6 +158,7 @@ struct LspHighlight: ParsableCommand {
         
         let lexicalTokens: [SemanticTokenAbsolute]
         switch sourceLanguage {
+#if canImport(ClangWrapper)
         case .c, .cpp, .objective_c, .objective_cpp:
             // languages that we know of supported by libclang
             let clangTokens = try Self.clangTokensFor(sourceFile: sourceFile)
@@ -176,6 +177,7 @@ struct LspHighlight: ParsableCommand {
                 assertionFailure("CWToken.tokens(forCommand:) failed")
                 lexicalTokens = []
             }
+#endif
         default:
             // no additional provider for lexical tokens
             lexicalTokens = []

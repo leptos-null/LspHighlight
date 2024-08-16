@@ -1,3 +1,5 @@
+#if canImport(ClangWrapper)
+
 import Foundation
 import ClangWrapper
 
@@ -101,3 +103,5 @@ extension LspHighlight {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+#endif /* canImport(ClangWrapper) */

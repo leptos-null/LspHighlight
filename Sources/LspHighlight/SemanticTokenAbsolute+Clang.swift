@@ -1,3 +1,5 @@
+#if canImport(ClangWrapper)
+
 import Foundation
 import ClangWrapper
 
@@ -80,3 +82,5 @@ extension SemanticTokenTypes {
         }
     }
 }
+
+#endif /* canImport(ClangWrapper) */
