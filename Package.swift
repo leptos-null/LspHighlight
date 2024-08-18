@@ -23,6 +23,12 @@ let package = Package(
                 .target(name: "ClangWrapper")
             ]
         ),
+        .executableTarget(
+            name: "XcodeLspStyle",
+            dependencies: [
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ]
+        ),
         .target(
             name: "ClangWrapper",
             cSettings: [
