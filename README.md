@@ -236,3 +236,90 @@ We can then place the snippet above into a full HTML document.
 With some CSS, this is what the result may look like:
 
 ![Code snippet with syntax highlighting](Screenshots/iobat_main-dark.png)
+
+## XcodeLspStyle
+
+This project also includes a tool to generate CSS from a `.xccolortheme` (Xcode theme) file.
+
+This CSS applies styles to the same classes output from `lsp-highlight`.
+
+### Usage
+
+```
+USAGE: xcode-lsp-style <xccolortheme>
+
+ARGUMENTS:
+  <xccolortheme>          Path to the xccolortheme
+        These can generally be found with `find $(xcode-select -p)/.. ~/Library/Developer/Xcode/UserData -name '*.xccolortheme' -type f`
+
+OPTIONS:
+  -h, --help              Show help information.
+```
+
+### Sample
+
+`xcode-lsp-style "/Applications/Xcode.app/Contents/SharedFrameworks/DVTUserInterfaceKit.framework/Versions/A/Resources/FontAndColorThemes/High Contrast (Dark).xccolortheme"`
+
+<details>
+
+<summary>CSS output</summary>
+
+```css
+.lsp-type-modifier {
+    color: #e1a778;
+}
+.lsp-type-comment {
+    color: #7cb454;
+}
+.lsp-type-keyword {
+    color: #fc6ba9;
+}
+.lsp-type-number {
+    color: #cfbb55;
+}
+.lsp-type-string {
+    color: #fc7367;
+}
+.lsp-type-class {
+    color: #a4fae5;
+}
+.lsp-type-class.lsp-modifier-defaultLibrary {
+    color: #ddc1fe;
+}
+.lsp-type-enumMember {
+    color: #72bead;
+}
+.lsp-type-enumMember.lsp-modifier-defaultLibrary {
+    color: #c089fe;
+}
+.lsp-type-function,
+.lsp-type-method,
+.lsp-type-property {
+    color: #72bead;
+}
+.lsp-type-function.lsp-modifier-defaultLibrary,
+.lsp-type-method.lsp-modifier-defaultLibrary,
+.lsp-type-property.lsp-modifier-defaultLibrary {
+    color: #c089fe;
+}
+.lsp-type-macro {
+    color: #fc8e3e;
+}
+.lsp-type-macro.lsp-modifier-defaultLibrary {
+    color: #fc8e3e;
+}
+.lsp-type-type {
+    color: #a4fae5;
+}
+.lsp-type-type.lsp-modifier-defaultLibrary {
+    color: #ddc1fe;
+}
+.lsp-type-variable.lsp-modifier-globalScope {
+    color: #72bead;
+}
+.lsp-type-variable.lsp-modifier-globalScope.lsp-modifier-defaultLibrary {
+    color: #c089fe;
+}
+```
+
+</details>
